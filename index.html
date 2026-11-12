@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a6577">
+<title>Ecocardiograma por voz</title>
+<style>
+:root{font:16px/1.5 system-ui,sans-serif;color:#14252b;background:#eef2f3}*{box-sizing:border-box}body{margin:0}header{position:sticky;top:0;background:#fff;border-bottom:1px solid #cfd9dc;padding:12px 16px;z-index:2}h1{font-size:1.15rem;margin:0;color:#0a6577}main{max-width:980px;margin:auto;padding:16px;display:grid;gap:14px}.card{background:#fff;border:1px solid #cfd9dc;border-radius:10px;padding:16px;display:grid;gap:12px}h2{font-size:1rem;margin:0;color:#0a6577}.hint,.status{margin:0;color:#566a72;font-size:.9rem}.status.error{color:#a32a2a}.buttons{display:flex;gap:8px;flex-wrap:wrap}button{font:inherit;padding:10px 14px;min-height:44px;border:1px solid #cfd9dc;border-radius:8px;background:#fff;cursor:pointer}button.primary{background:#0a6577;color:#fff;border-color:#0a6577}button.recording{background:#a32a2a;color:#fff;border-color:#a32a2a}button:disabled{opacity:.5}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}.field{display:grid;gap:4px}.field label{font-size:.85rem;color:#566a72}.field input,.field select,textarea{width:100%;font:inherit;font-size:16px;padding:9px;border:1px solid #cfd9dc;border-radius:7px;background:#f7f9f9;color:inherit}textarea{min-height:100px;resize:vertical}.wide{grid-column:1/-1}.chip{display:inline-block;padding:3px 8px;border-radius:6px;background:#e3e9eb;margin:2px;font-size:.86rem}#captured{display:flex;flex-wrap:wrap;gap:4px}
+</style>
+</head>
+<body>
+<header><h1>Reporte de ecocardiograma por voz</h1></header>
+<main>
+<section class="card">
+<h2>Dictado</h2>
+<p class="hint">Dicta una o varias mediciones, por ejemplo: «femenino, edad 50, peso 63, talla 155, septum 10, pared posterior 9, diámetro diastólico 48, TAPSE 21». Revisa los valores antes de usarlos. El reconocimiento del navegador requiere permiso de micrófono y, normalmente, una conexión segura (HTTPS).</p>
+<textarea id="dict" aria-label="Dictado" placeholder="Dicta aquí o usa el micrófono del dispositivo…"></textarea>
+<div class="buttons"><button id="mic" class="primary" type="button">Iniciar dictado</button><button id="apply" type="button">Aplicar dictado</button><button id="clear" type="button">Limpiar dictado</button></div>
+<p id="status" class="status" role="status" aria-live="polite">El dictado por micrófono depende de que el navegador sea compatible; también puedes usar el micrófono del teclado.</p>
+</section>
+<section class="card"><h2>Datos del estudio</h2><div class="grid" id="fields"></div></section>
+<section class="card"><h2>Valores capturados</h2><div id="captured"><p class="hint">Aún no hay mediciones.</p></div></section>
+</main>
+<script>
+(function(){
+'use strict';
+const definitions=[
+ ['paciente','Paciente','text',['paciente','nombre']],['sexo','Sexo','select',['sexo','femenino','masculino']],['edad','Edad (años)','number',['edad']],['fecha','Fecha','date',['fecha']],['diagnostico','Diagnóstico','text',['diagnostico']],['peso','Peso (kg)','number',['peso']],['talla','Talla (cm)','number',['talla','estatura']],['fc','Frecuencia cardiaca (lpm)','number',['frecuencia cardiaca','fc','frecuencia']],['tas','Presión sistólica (mmHg)','number',['presion sistolica','tas']],['tad','Presión diastólica (mmHg)','number',['presion diastolica','tad']],
+ ['siv','Septum / SIV d (mm)','number',['septum','septo','siv','tabique']],['ppvi','Pared posterior (mm)','number',['pared posterior','ppvi']],['dd','Diámetro diastólico VI (mm)','number',['diametro diastolico','dd']],['ds','Diámetro sistólico VI (mm)','number',['diametro sistolico','ds']],['vtd','Volumen telediastólico (ml)','number',['volumen telediastolico','vtd']],['vts','Volumen telesistólico (ml)','number',['volumen telesistolico','vts']],['fevi','FEVI (%)','number',['fevi','fraccion de eyeccion','fraccion de expulsion']],['ai_a4c','Área AI 4C (cm²)','number',['area cuatro camaras','area 4c']],['ai_a2c','Área AI 2C (cm²)','number',['area dos camaras','area 2c']],['ai_long','Longitud AI (cm)','number',['longitud auricula izquierda']],['lavi','LAVI (ml/m²)','number',['lavi']],['tapse','TAPSE (mm)','number',['tapse','taps','tapce']],['vd_s','Onda S′ VD (cm/s)','number',['onda s tricuspidea','s tricuspidea']],['vt_vmax','Velocidad máxima IT (m/s)','number',['velocidad tricuspidea','velocidad maxima tricuspidea']],['psap','PSAP (mmHg)','number',['psap','presion sistolica pulmonar']],['vci','Vena cava inferior (mm)','number',['vena cava inferior','vci']],['obs','Observaciones','text',['observaciones','observacion']]
+];
+const $=id=>document.getElementById(id), dict=$('dict'), status=$('status'), values={};
+const norm=s=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[’′]/g,' prima ').replace(/[^a-z0-9.,\s-]/g,' ').replace(/\s+/g,' ').trim();
+const box=$('fields');
+for(const [id,label,type,aliases] of definitions){const wrap=document.createElement('div');wrap.className='field'+(type==='text'&&id==='diagnostico'?' wide':'');const lab=document.createElement('label');lab.htmlFor='f-'+id;lab.textContent=label;let input;
+ if(type==='select'){input=document.createElement('select');input.innerHTML='<option value="">—</option><option value="F">Femenino</option><option value="M">Masculino</option>';}else{input=document.createElement('input');input.type=type;if(type==='number')input.step='any';}
+ input.id='f-'+id;input.addEventListener('input',()=>{if(input.value)values[id]=input.value;else delete values[id];render();});wrap.append(lab,input);box.append(wrap);
+}
+function render(){const c=$('captured');c.replaceChildren();let n=0;for(const [id,label] of definitions){if(values[id]==null||values[id]==='')continue;const chip=document.createElement('span');chip.className='chip';chip.textContent=label+': '+values[id];c.append(chip);n++;}if(!n){const p=document.createElement('p');p.className='hint';p.textContent='Aún no hay mediciones.';c.append(p);}}
+function parse(text){const clean=norm(text), found={};
+ // Search aliases longest-first to avoid matching a short alias inside a longer measurement name.
+ const names=[];for(const [id,label,type,aliases] of definitions)for(const alias of aliases)names.push({id,label,type,alias:norm(alias)});names.sort((a,b)=>b.alias.length-a.alias.length);
+ const matches=[];for(const item of names){const re=new RegExp('(^|\\b)'+item.alias.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?=\\b|$)','g');let m;while((m=re.exec(clean))!==null){const start=m.index+m[1].length;if(!matches.some(x=>x.start===start&&x.end===start+item.alias.length))matches.push({start,end:start+item.alias.length,item});}}
+ matches.sort((a,b)=>a.start-b.start);for(let i=0;i<matches.length;i++){const m=matches[i],end=i+1<matches.length?matches[i+1].start:clean.length,segment=clean.slice(m.end,end).trim();if(m.item.id==='sexo'){if(/\b(femenino|femenina|mujer)\b/.test(segment))found.sexo='F';else if(/\b(masculino|hombre)\b/.test(segment))found.sexo='M';continue;}
+ if(m.item.type==='text'){const textValue=segment.replace(/^(es|de|igual a)\s+/,'').replace(/[,.]+$/,'').trim();if(textValue)found[m.item.id]=textValue;continue;}
+ const num=segment.match(/-?\d+(?:[.,]\d+)?/);if(num)found[m.item.id]=num[0].replace(',','.');}
+ // Explicit gender expressions can occur without a separate "sexo" label.
+ if(/\b(femenino|femenina|mujer)\b/.test(clean))found.sexo='F';if(/\b(masculino|hombre)\b/.test(clean))found.sexo='M';return found;
+}
+function apply(){const parsed=parse(dict.value);let n=0;for(const [id,v] of Object.entries(parsed)){const input=$('f-'+id);if(!input)continue;input.value=v;values[id]=v;n++;}render();status.className='status';status.textContent=n?'Se actualizaron '+n+' campo(s). Verifica los datos capturados.':'No se reconocieron valores. Di el nombre del campo seguido de su valor, por ejemplo «TAPSE 21».';}
+$('apply').addEventListener('click',apply);$('clear').addEventListener('click',()=>{dict.value='';status.className='status';status.textContent='Dictado borrado. Los valores ya capturados se conservan.';});
+const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;let recognition=null,listening=false;
+function micState(on){listening=on;$('mic').textContent=on?'Detener dictado':'Iniciar dictado';$('mic').classList.toggle('recording',on);}
+if(!SpeechRecognition){$('mic').disabled=true;status.textContent='Este navegador no ofrece reconocimiento de voz web. Prueba Chrome/Edge en HTTPS o usa el micrófono del teclado del dispositivo.';}
+$('mic').addEventListener('click',()=>{if(!SpeechRecognition)return;if(listening){recognition.stop();return;}try{recognition=new SpeechRecognition();recognition.lang='es-MX';recognition.continuous=true;recognition.interimResults=true;recognition.onresult=e=>{let text='';for(let i=e.resultIndex;i<e.results.length;i++)text+=e.results[i][0].transcript+(e.results[i].isFinal?' ': '');dict.value=(dict.value+' '+text).trim();if([...e.results].some(r=>r.isFinal))apply();};recognition.onerror=e=>{status.className='status error';status.textContent=e.error==='not-allowed'?'Permiso de micrófono denegado. Habilítalo en la configuración del navegador o usa el micrófono del teclado.':'No se pudo reconocer la voz ('+e.error+'). Usa el micrófono del teclado como alternativa.';};recognition.onend=()=>micState(false);recognition.start();micState(true);status.className='status';status.textContent='Escuchando… Di el nombre de una medición y su valor.';}catch(err){micState(false);status.className='status error';status.textContent='No se pudo iniciar el micrófono. Verifica los permisos y que la página esté en HTTPS.';}});
+})();
+</script>
+</body>
+</html>
